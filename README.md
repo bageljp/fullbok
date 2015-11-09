@@ -31,4 +31,8 @@ vi tarraform.tfvars
 terraform plan
 terraform apply
 ```
+TODO
+----
+
+* JDK version to variable.
 
