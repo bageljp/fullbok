@@ -1,0 +1,56 @@
+<powershell>
+
+# policy setting
+#---------------------------
+Set-ExecutionPolicy -Force Bypass
+
+# install jdk
+#---------------------------
+$client = new-object System.Net.WebClient
+$client.Headers.add("Cookie", "oraclelicense=accept-securebackup-cookie")
+$client.DownloadFile("http://download.oracle.com/otn-pub/java/jdk/7u79-b15/jdk-7u79-windows-x64.exe", "C:\Users\Administrator\jdk.exe")
+C:\Users\Administrator\jdk.exe /s /lang=1041 INSTALLDIR=C:\java\jdk1.7.79
+$env:PATH = $env:PATH + ";C:\java\jdk1.7.79\bin"
+
+
+# disable firewall
+#---------------------------
+netsh advfirewall set allprofiles state off
+
+
+# jmeter
+#---------------------------
+New-Item "C:\jmeter" -type Directory
+$client.DownloadFile("${jmeter_url}${jmeter_version}.zip", "C:\jmeter\apache-jmeter-${jmeter_version}.zip")
+$shell = new-object -com shell.application
+$zip = $shell.NameSpace("C:\jmeter\apache-jmeter-${jmeter_version}.zip")
+foreach($item in $zip.items()) { $shell.Namespace("C:\jmeter").copyhere($item) }
+
+
+# create shortcut
+#---------------------------
+$WshShell = New-Object -comObject WScript.Shell
+$shortcut = $WshShell.CreateShortcut("C:\Users\Administrator\Desktop\JMeter.lnk")
+$shortcut.TargetPath = "C:\jmeter\apache-jmeter-${jmeter_version}\bin\jmeterw.cmd"
+$shortcut.WorkingDirectory = "C:\jmeter\apache-jmeter-${jmeter_version}\bin"
+$shortcut.Save()
+
+
+# setup jmeter cluster
+#---------------------------
+Set-DefaultAWSRegion ${region}
+$filterTag = New-Object Amazon.EC2.Model.Filter -Property @{Name = "tag:Role"; Values = @("fullbok-slave")}
+$filterStatus = New-Object Amazon.EC2.Model.Filter -Property @{Name = "instance-state-name"; Values = @("running")}
+$slaves = (Get-EC2Instance -Filter $filterTag,$filterStatus).instances.PrivateIpAddress -join ','
+$fileContent = Get-Content "C:\jmeter\apache-jmeter-${jmeter_version}\bin\jmeter.properties"
+Foreach-Object {$fileContent -replace '^remote_hosts=.*$', ("remote_hosts=" + $slaves)} | Set-Content "C:\jmeter\apache-jmeter-${jmeter_version}\bin\jmeter.properties"
+
+
+# update jmeter
+#---------------------------
+(Get-Content "C:\jmeter\apache-jmeter-${jmeter_version}\bin\jmeter.bat") `
+ | Foreach-Object {$_ -replace '^set HEAP=.*$', ("set HEAP=${java_heap}")} `
+ | Foreach-Object {$_ -replace '^set NEW=.*$', ("set NEW=${java_new}")} `
+ | Set-Content "C:\jmeter\apache-jmeter-${jmeter_version}\bin\jmeter.bat"
+
+</powershell>

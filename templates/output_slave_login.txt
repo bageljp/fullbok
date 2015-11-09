@@ -1,0 +1,4 @@
+ssh -i /path/to/${key_name}.pem ec2-user@$<ip>
+
+    slave ip:
+      ${slave_ips}

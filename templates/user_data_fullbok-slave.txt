@@ -1,0 +1,48 @@
+#! /bin/bash -v
+
+# packages
+#---------------------------
+yum install java-1.7.0-openjdk-devel
+yum update -y
+
+
+# jmeter
+#---------------------------
+cd /opt
+curl -L -s -o apache-jmeter-${jmeter_version}.tgz ${jmeter_url}${jmeter_version}.tgz
+tar xf apache-jmeter-${jmeter_version}.tgz
+ln -s apache-jmeter-${jmeter_version} apache-jmeter
+
+
+# tuning
+#---------------------------
+echo "*            soft    nofile          65536" > /etc/security/limits.d/99-jmeter.conf
+echo "*            hard    nofile          65536" >> /etc/security/limits.d/99-jmeter.conf
+echo "*            soft    nproc           8192" >> /etc/security/limits.d/99-jmeter.conf
+echo "*            hard    nproc           8192" >> /etc/security/limits.d/99-jmeter.conf
+
+echo "net.ipv4.tcp_tw_recycle = 1" >> /etc/sysctl.conf
+echo "net.ipv4.tcp_fin_timeout = 1" >> /etc/sysctl.conf
+sysctl -p
+
+
+# unbound
+#---------------------------
+yum install unbound --enablerepo=epel -y
+sed -i "s/val-permissive-mode: .*/val-permissive-mode: yes/g" /etc/unbound/unbound.conf
+echo -e "forward-zone:\n\tname: ${region}.compute.internal\n\tforward-addr: ${vpc_dns}" >> /etc/unbound/unbound.conf
+service unbound start
+chkconfig unbound on
+sed -i "s/PEERDNS=yes/PEERDNS=no/g" /etc/sysconfig/network-scripts/ifcfg-eth0
+sed -i "s/nameserver .*/nameserver 127.0.0.1/g" /etc/resolv.conf
+
+
+# jmeter settings and run
+#---------------------------
+sed -i -e "s/^#RMI_HOST_DEF=-Djava.rmi.server.hostname=.*$/RMI_HOST_DEF=-Djava.rmi.server.hostname=$(curl -s http://169.254.169.254/latest/meta-data/local-hostname)/" /opt/apache-jmeter/bin/jmeter-server
+sed -i -e "s/^HEAP/# HEAP/ " -e " /^# HEAP/i HEAP=\"${java_heap}\"" /opt/apache-jmeter/bin/jmeter
+sed -i -e "s/^NEW/# NEW/ " -e " /^# NEW/i NEW=\"${java_new}\" " /opt/apache-jmeter/bin/jmeter
+sed -i -e " /^java/i JVM_ARGS=\"\$JVM_ARGS -Dsun.net.inetaddr.ttl=0\"" /opt/apache-jmeter/bin/jmeter
+echo "$(curl -s curl http://169.254.169.254/latest/meta-data/local-ipv4) $(hostname)" >> /etc/hosts
+echo '/opt/apache-jmeter/bin/jmeter-server | logger -p daemon.info &' >> /etc/rc.local
+
